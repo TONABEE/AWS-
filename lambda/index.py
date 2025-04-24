@@ -4,6 +4,31 @@ import os
 import boto3
 import re  # 正規表現モジュールをインポート
 from botocore.exceptions import ClientError
+import urllib.request
+
+def lambda_handler(event, context):
+    # 送るメッセージ（eventから取得する例）
+    message = event["messages"][-1]["content"]
+
+    # Colabで取得したAPIのURLに置き換えて！
+    api_url = "https://xxxx.ngrok.io/predict"
+    
+    # リクエスト用のデータ
+    data = json.dumps({"message": message}).encode("utf-8")
+
+    # リクエスト作成
+    req = urllib.request.Request(api_url, data=data, headers={'Content-Type': 'application/json'})
+
+    # APIを呼び出して結果を取得
+    with urllib.request.urlopen(req) as res:
+        result = json.loads(res.read().decode())
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps({
+            "response": result["response"]
+        }),
+    }
 
 
 # Lambda コンテキストからリージョンを抽出する関数
