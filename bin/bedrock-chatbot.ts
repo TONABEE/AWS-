@@ -1,3 +1,4 @@
+// betrockのインストールと動かす環境の設定
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
