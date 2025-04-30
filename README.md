@@ -42,8 +42,8 @@ Amazon Bedrock を使用したチャットボットアプリケーションで�
 ### 1. リポジトリのクローン
 
 ```
-git clone https://github.com/keisskaws/simplechat
-cd simplechat
+git clone https://github.com/TONABEE/AWS-.git
+cd AWS-
 ```
 
 ### 2. CDK プロジェクトの依存関係 && フロントエンドのビルド
