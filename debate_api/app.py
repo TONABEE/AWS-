@@ -10,6 +10,8 @@ from typing import Optional, List
 import uvicorn
 import nest_asyncio
 from pyngrok import ngrok
+import requests
+from bs4 import BeautifulSoup
 
 # モデル設定
 MODEL_NAME = "google/gemma-2-2b-jpn-it"
@@ -59,6 +61,12 @@ class DebateResponse(BaseModel):
     generated_text: str
     response_time: float
 
+class EvidenceFromUrl(BaseModel):
+    url: str
+    topic: Optional[str] = None
+    max_tokens: Optional[int] = 512
+    temperature: Optional[float] = 0.7
+
 # グローバル変数
 model = None
 
@@ -102,17 +110,22 @@ async def generate_argument(request: DebateArgument):
     try:
         start_time = time.time()
         
-        prompt = f"""以下のトピックについて、{request.stance}の立場から説得力のある議論を展開してください。
+        prompt = f"""Given the topic: {request.topic}, and taking the {request.stance} stance, please construct a persuasive argument for a debate round, keeping the judge as your primary audience.
 
-トピック: {request.topic}
-{f'コンテキスト: {request.context}' if request.context else ''}
+{f'Context: {request.context}' if request.context else ''}
 
-以下の要素を含めて議論を構築してください：
-1. 主張
-2. 根拠（データや具体例）
-3. 論理的な説明
-4. 想定される反論への対応
+Structure your argument clearly using **Labeling** and **Numbering** for the judge. Include the following elements:
 
+1.  **Claim:** The main point you want the judge to accept.
+2.  **Reason(s):** The data, examples, or facts supporting your claim.
+3.  **Warrant:** Explain the logical connection showing how your reason(s) prove your claim. (Explain why the Reason is true and why it supports the Claim) [9, 10].
+4.  **Impact:** Explain the significance or consequence of your claim being true (e.g., the severity of a problem, the magnitude of a benefit) [12-14].
+5.  **Addressing Potential Counter-Arguments:** Briefly explain why anticipated attacks against this specific argument are not persuasive, structuring your response to each potential attack by first stating your conclusion and then your reasoning [17].
+
+If this argument is a main Affirmative Advantage (AD), also ensure it clearly demonstrates **Inherency** (the problem exists in the status quo) and **Solvency** (the plan resolves the problem) [12, 13].
+
+If this argument is a main Negative Disadvantage (DA), also ensure it clearly demonstrates **Uniqueness** (the problem does not happen in the status quo) and **Linkage** (the plan causes the problem) [14].
+""
 議論："""
 
         outputs = model(
@@ -140,17 +153,18 @@ async def analyze_evidence(request: EvidenceAnalysis):
     try:
         start_time = time.time()
         
-        prompt = f"""以下の証拠を分析し、その強みと弱み、ディベートでの活用方法を評価してください。
+        prompt = f"""Analyze the following evidence for potential use in a debate round, considering the judge's perspective.
 
-証拠: {request.evidence}
-{f'視点: {request.perspective}' if request.perspective else ''}
+Evidence: {request.evidence}
+{f'Perspective: {request.perspective}' if request.perspective else ''}
 
-以下の観点から分析してください：
-1. 信頼性
-2. 関連性
-3. 説得力
-4. 想定される反論
-5. 活用戦略
+Evaluate the evidence from the following perspectives:
+
+1.  **Reliability:** Assess the source's credibility based on the author's **Authority** (Name, Title/Position), publication **Year**, and the **Source/Publisher** (where it was published) [18]. Consider the **Context** and any explicit or implicit **Assumptions** within the evidence that might limit its applicability [19].
+2.  **Relevance:** How directly does this evidence support a potential claim or specific component of an argument (e.g., Inherency, Impact, Solvency for AFF; Uniqueness, Linkage, Impact for NEG)? [12-14]
+3.  **Persuasiveness:** How likely is this evidence to convince the judge? Does it provide sufficient detail or come from a highly respected source? [23, 24]
+4.  **Anticipated Rebuttals:** What attacks could the opponent make against this evidence? (e.g., challenging the source's authority, questioning its recency, pointing out limiting assumptions or context) [19].
+5.  **Utilization Strategy:** How and where in a debate round would this evidence be most effectively used? (e.g., to support a specific sub-point within an AD or DA during a Constructive speech, cited verbally as per debate norms) [18, 21-23].
 
 分析："""
 
@@ -179,15 +193,19 @@ async def generate_counter(request: CounterArgument):
     try:
         start_time = time.time()
         
-        prompt = f"""以下の議論に対する効果的な反論を生成してください。
+        prompt = f"""Generate an effective refutation against the following argument for a debate round, structured for clarity for the judge:
 
-元の議論: {request.argument}
+Original Argument: {request.argument}
 
-以下の要素を含めて反論を構築してください：
-1. 主張の弱点の指摘
-2. 論理的な反証
-3. 代替的な解釈や証拠の提示
-4. 結論
+Structure your refutation as follows, using **Labeling** and **Numbering** if necessary:
+
+1.  **Sign Posting:** Clearly indicate which specific argument you are responding to (e.g., "Going to their first Advantage, Solvency...") [17].
+2.  **Confirmation:** Briefly restate the opponent's claim or the specific point you are refuting (e.g., "...they said their plan solves the problem.") [17].
+3.  **Conclusion/Label:** State your refutation point clearly and concisely, potentially using a standard debate label if applicable (e.g., "However, No Solvency.") [17, 25].
+4.  **Reasoning:** Provide the logical explanation and evidence (if any) why your conclusion is true and why their argument is flawed. Focus on attacking the **Reasoning** or **Warrant** that connects their claim to their support [9, 26].
+    *   Consider presenting alternative interpretations or evidence that contradict their point [21].
+5.  **Evaluation:** Explain the consequence of your refutation for the opponent's argument and the debate round (e.g., "Therefore, their Solvency is zero," or "This means their Advantage is completely defeated," or "Their DA has no Uniqueness") [17, 25].
+6.  **Identify Type (Optional but helpful):** Briefly explain if this refutation is a "crushing" argument (completely defeats the point) or a "partial" argument (weakens the point) [27].
 
 反論："""
 
@@ -206,6 +224,64 @@ async def generate_counter(request: CounterArgument):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- FastAPIルーティング部に追加（他の @app.post の後）---
+@app.post("/generate_evidence_from_url", response_model=DebateResponse)
+async def generate_evidence_from_url(request: EvidenceFromUrl):
+    if model is None:
+        raise HTTPException(status_code=503, detail="モデルが利用できません")
+
+    try:
+        start_time = time.time()
+
+        # Webページ取得
+        response = requests.get(request.url, timeout=10)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        title = soup.title.string.strip() if soup.title else "No Title"
+        paragraphs = soup.find_all("p")
+        full_text = "\n".join([p.get_text() for p in paragraphs if p.get_text().strip() != ""])[:3000]
+
+        # モデルプロンプト
+        prompt = f"""
+Extract usable evidence from the following article for an academic debate. Format it as a Pass Card:
+
+Article Title: {title}
+URL: {request.url}
+
+Article Text:
+\"\"\"
+{full_text}
+\"\"\"
+
+Please extract one strong quote and structure the output as follows:
+
+[Claim/Assertion: (a concise summary of what the quote supports)]
+"(Direct Quote from the source)"
+Author: (If available)
+Title/Position: (If available)
+Year: (Try to infer from metadata or content, approximate if needed)
+Source/Publisher: (Use website title or organization name)
+URL: {request.url}
+"""
+
+        outputs = model(
+            prompt,
+            max_new_tokens=request.max_tokens,
+            temperature=request.temperature,
+            do_sample=True
+        )
+
+        generated_pass_card = outputs[0]["generated_text"].strip()
+
+        return DebateResponse(
+            generated_text=generated_pass_card,
+            response_time=time.time() - start_time
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"エビデンス生成中にエラーが発生しました: {str(e)}")
+
 
 # ngrokでの実行
 def run_with_ngrok(port=8501):
