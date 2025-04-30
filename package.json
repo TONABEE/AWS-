@@ -2,13 +2,18 @@
     "name": "debate-app",
     "version": "0.1.0",
     "bin": {
-        "infrastructure": "bin/infrastructure.js"
+        "bedrock-chatbot": "bin/bedrock-chatbot.js"
     },
     "scripts": {
         "build": "tsc",
         "watch": "tsc -w",
         "test": "jest",
-        "cdk": "cdk"
+        "cdk": "cdk",
+        "deploy": "cdk deploy",
+        "destroy": "cdk destroy",
+        "synth": "cdk synth",
+        "bootstrap": "cdk bootstrap",
+        "postinstall": "cd frontend && npm install && npm run build"
     },
     "devDependencies": {
         "@types/jest": "^29.5.1",
@@ -22,8 +27,8 @@
     "dependencies": {
         "@aws-cdk/aws-apigatewayv2-alpha": "^2.87.0-alpha.0",
         "@aws-cdk/aws-apigatewayv2-integrations-alpha": "^2.87.0-alpha.0",
-        "aws-cdk-lib": "2.87.0",
-        "constructs": "^10.0.0",
-        "node": "^22.15.0"
+        "aws-cdk-lib": "^2.187.0",
+        "constructs": "^10.4.2",
+        "source-map-support": "^0.5.21"
     }
 }
