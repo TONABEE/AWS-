@@ -163,3 +163,65 @@ def lambda_handler(event, context):
                 "error": str(error)
             })
         }
+
+# データ永続化のための新しいハンドラー
+def save_data_handler(event, context):
+    try:
+        body = json.loads(event['body'])
+        user_id = event['requestContext']['authorizer']['claims']['sub']
+        data_type = body['type']  # 'conversation', 'flowchart', 'team'
+        
+        if data_type == 'conversation':
+            save_conversation(user_id, body['data'])
+        elif data_type == 'flowchart':
+            save_flowchart(user_id, body['data'])
+        elif data_type == 'team':
+            save_team_data(user_id, body['data'])
+            
+        return {
+            'statusCode': 200,
+            'body': json.dumps({'success': True})
+        }
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
+
+# WebSocket接続管理のためのハンドラー
+def websocket_handler(event, context):
+    connection_id = event['requestContext']['connectionId']
+    route_key = event['requestContext']['routeKey']
+    
+    if route_key == '$connect':
+        handle_connect(connection_id)
+    elif route_key == '$disconnect':
+        handle_disconnect(connection_id)
+    elif route_key == 'sendmessage':
+        handle_message(connection_id, event['body'])
+
+def setup_s3_bucket():
+    s3_client = boto3.client('s3')
+    
+    # PDFストレージ用のバケット作成
+    bucket_name = 'debate-pdfs'
+    s3_client.create_bucket(
+        Bucket=bucket_name,
+        CreateBucketConfiguration={
+            'LocationConstraint': 'ap-northeast-1'  # 東京リージョン
+        }
+    )
+    
+    # バケットの暗号化設定
+    s3_client.put_bucket_encryption(
+        Bucket=bucket_name,
+        ServerSideEncryptionConfiguration={
+            'Rules': [
+                {
+                    'ApplyServerSideEncryptionByDefault': {
+                        'SSEAlgorithm': 'AES256'
+                    }
+                }
+            ]
+        }
+    )
