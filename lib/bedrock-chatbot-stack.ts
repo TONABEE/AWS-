@@ -1,7 +1,7 @@
 // AWSと接続するためのファイル
 // lib/bedrock-chatbot-stack.ts
 import * as cdk from 'aws-cdk-lib';
-import { Construct } from 'constructs';
+import { Construct, IConstruct } from 'constructs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -52,8 +52,7 @@ export class BedrockChatbotStack extends cdk.Stack {
     });
 
     // User Pool Clientの作成
-    const userPoolClient = new cognito.UserPoolClient(this, 'ChatbotUserPoolClient', {
-      userPool,
+    const userPoolClient = userPool.addClient('ChatbotUserPoolClient', {
       authFlows: {
         userPassword: true,
         userSrp: true,
@@ -124,9 +123,7 @@ export class BedrockChatbotStack extends cdk.Stack {
     });
 
     // CloudFront URLをユーザープールクライアントのコールバックURLに追加
-    userPoolClient.node.addDependency(distribution);
-    
-    const cfnUserPoolClient = userPoolClient.node.defaultChild as cognito.CfnUserPoolClient;
+    const cfnUserPoolClient = ((userPoolClient as unknown as IConstruct).node.defaultChild as unknown) as cognito.CfnUserPoolClient;
     cfnUserPoolClient.callbackUrLs = [
       `https://${distribution.distributionDomainName}`,
       'http://localhost:3000',
@@ -161,11 +158,6 @@ export class BedrockChatbotStack extends cdk.Stack {
         MODEL_ID: modelId,
       },
     });
-
-    // 明示的な依存関係を追加
-    const cfnChatFunction = chatFunction.node.defaultChild as lambda.CfnFunction;
-    const cfnLambdaRole = lambdaRole.node.defaultChild as iam.CfnRole;
-    cfnChatFunction.addDependsOn(cfnLambdaRole);
 
     // API Gateway with Cognito Authorizer
     const api = new apigateway.RestApi(this, 'ChatbotApi', {
@@ -388,11 +380,6 @@ export class BedrockChatbotStack extends cdk.Stack {
       },
     });
     
-    // 明示的な依存関係を追加
-    const cfnConfigFunction = configGeneratorFunction.node.defaultChild as lambda.CfnFunction;
-    const cfnConfigRole = configGeneratorRole.node.defaultChild as iam.CfnRole;
-    cfnConfigFunction.addDependsOn(cfnConfigRole);
-    
     // カスタムリソースプロバイダー
     const configProvider = new cr.Provider(this, 'ConfigProvider', {
       onEventHandler: configGeneratorFunction,
@@ -424,7 +411,7 @@ export class BedrockChatbotStack extends cdk.Stack {
     });
     
     // 依存関係を設定
-    configResource.node.addDependency(websiteDeployment);
+    (configResource as unknown as IConstruct).node.addDependency(websiteDeployment);
 
     // Outputs
     new cdk.CfnOutput(this, 'CloudFrontURL', {
